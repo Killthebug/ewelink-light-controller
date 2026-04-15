@@ -40,6 +40,77 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+function getErrorHint(err) {
+  const msg = (err.message || '').toLowerCase();
+  if (msg.includes('401') || msg.includes('wrong account') || msg.includes('invalid credentials'))
+    return 'Wrong email or password. Use the same email/password as your eWeLink mobile app.';
+  if (msg.includes('402') || msg.includes('not activated'))
+    return 'Your eWeLink account email is not verified. Check your inbox.';
+  if (msg.includes('406') || msg.includes('auth'))
+    return 'Authentication failed. Use your eWeLink app login, not developer API keys.';
+  if (msg.includes('503'))
+    return 'eWeLink service is temporarily unavailable. Try again in a minute.';
+  if (msg.includes('timeout') || msg.includes('econnrefused') || msg.includes('network'))
+    return 'Network error — check your internet connection.';
+  return 'Check your EWELINK_EMAIL and EWELINK_PASSWORD in .env.';
+}
+
+// Debug endpoint — helps troubleshoot auth issues
+app.get('/api/debug', async (req, res) => {
+  const conn = getConnection();
+  if (!conn) {
+    return res.json({
+      configured: false,
+      issue: 'Missing credentials',
+      hint: 'Copy .env.example to .env and set EWELINK_EMAIL and EWELINK_PASSWORD',
+    });
+  }
+  try {
+    const credentials = await conn.getCredentials();
+    if (credentials.error) {
+      const errorMap = {
+        400: 'Parameter error — check your email/password format',
+        401: 'Wrong account or password — double-check your eWeLink login',
+        402: 'Email not activated — verify your eWeLink account email',
+        403: 'Forbidden — your account may be restricted',
+        406: 'Authentication failed — credentials rejected by eWeLink',
+        301: 'Region redirect issue — try removing the region setting',
+      };
+      return res.json({
+        configured: true, authenticated: false,
+        error: credentials.error, msg: credentials.msg,
+        hint: errorMap[credentials.error] || credentials.msg,
+        region: credentials.region || 'us (default)',
+      });
+    }
+    const devices = await conn.getDevices();
+    if (devices.error) {
+      return res.json({
+        configured: true, authenticated: true,
+        devicesError: devices.error, devicesMsg: devices.msg,
+        hint: devices.error === 404
+          ? 'No devices found — add some devices in the eWeLink app first'
+          : `Device list error: ${devices.msg}`,
+      });
+    }
+    return res.json({
+      configured: true, authenticated: true,
+      deviceCount: Array.isArray(devices) ? devices.length : 0,
+      devices: Array.isArray(devices) ? devices.map(d => ({
+        id: d.deviceid, name: d.name, online: d.online,
+        model: d.productModel, brand: d.brandName,
+      })) : [],
+      region: conn.region || 'us',
+    });
+  } catch (err) {
+    return res.json({
+      configured: true, authenticated: false,
+      error: err.message,
+      hint: 'Unexpected error — check your network connection and credentials',
+    });
+  }
+});
+
 app.get('/api/devices', async (req, res) => {
   const conn = getConnection();
   if (!conn) {
