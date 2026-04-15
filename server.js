@@ -26,7 +26,6 @@ function getConnection() {
     connection = new eWeLink({
       email,
       password,
-      region: 'us',
     });
   }
   return connection;
