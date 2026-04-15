@@ -126,10 +126,8 @@ app.get('/api/devices', async (req, res) => {
     res.json(devices);
   } catch (err) {
     console.error('Failed to fetch devices:', err.message);
-    if (err.message?.includes('auth') || err.message?.includes('login')) {
-      connection = null;
-    }
-    res.status(500).json({ error: err.message });
+    const hint = getErrorHint(err);
+    res.status(500).json({ error: err.message, hint });
   }
 });
 
